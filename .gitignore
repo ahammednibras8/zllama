@@ -1,0 +1,10 @@
+temp/
+
+# Zig compiler cache
+.zig-cache/
+
+# Zig build output
+zig-out/
+
+# macOS Finder metadata
+.DS_Store
