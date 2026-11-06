@@ -187,6 +187,12 @@ pub fn build(b: *std.Build) void {
     );
     run_cli_unknown_command.expectExitCode(1);
 
+    const run_cli_empty_path = b.addRunArtifact(exe);
+    run_cli_empty_path.setName("test CLI empty checkpoint path");
+    run_cli_empty_path.addArgs(&.{ "inspect", "" });
+    run_cli_empty_path.expectStdErrEqual("Checkpoint path cannot be empty\n");
+    run_cli_empty_path.expectExitCode(1);
+
     // A top level step for running all tests. dependOn can be called multiple
     // times and since the two run steps do not depend on one another, this will
     // make the two of them run in parallel.
@@ -197,6 +203,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_cli_too_few.step);
     test_step.dependOn(&run_cli_too_many.step);
     test_step.dependOn(&run_cli_unknown_command.step);
+    test_step.dependOn(&run_cli_empty_path.step);
 
     const fmt_check = b.addFmt(.{
         .paths = &.{ "build.zig", "src" },
@@ -212,6 +219,7 @@ pub fn build(b: *std.Build) void {
     check_step.dependOn(&run_cli_too_few.step);
     check_step.dependOn(&run_cli_too_many.step);
     check_step.dependOn(&run_cli_unknown_command.step);
+    check_step.dependOn(&run_cli_empty_path.step);
 
     // Just like flags, top level steps are also listed in the `--help` menu.
     //

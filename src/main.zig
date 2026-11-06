@@ -15,6 +15,13 @@ pub fn main(init: std.process.Init) !void {
         std.process.exit(1);
     }
 
+    const checkpoint_path = args[2];
+
+    if (checkpoint_path.len == 0) {
+        std.debug.print("Checkpoint path cannot be empty\n", .{});
+        std.process.exit(1);
+    }
+
     std.debug.print("command: {s}\n", .{args[1]});
-    std.debug.print("checkpoint: {s}\n", .{args[2]});
+    std.debug.print("checkpoint: {s}\n", .{checkpoint_path});
 }
