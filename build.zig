@@ -160,7 +160,9 @@ pub fn build(b: *std.Build) void {
     const run_cli_valid = b.addRunArtifact(exe);
     run_cli_valid.setName("test CLI valid argument count");
     run_cli_valid.addArgs(&.{ "inspect", "LICENSE" });
-    run_cli_valid.expectStdErrEqual("Opened checkpoint: LICENSE\n");
+    run_cli_valid.expectStdErrMatch("Opened checkpoint: LICENSE (");
+    run_cli_valid.expectStdErrMatch(" bytes)\n");
+    run_cli_valid.expectExitCode(0);
 
     const run_cli_too_few = b.addRunArtifact(exe);
     run_cli_too_few.setName("test CLI missing arguments");

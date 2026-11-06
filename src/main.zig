@@ -44,6 +44,17 @@ fn run(init: std.process.Init) !u8 {
     };
     defer file.close(io);
 
-    std.debug.print("Opened checkpoint: {s}\n", .{checkpoint_path});
+    const file_size = file.length(io) catch |err| {
+        std.debug.print(
+            "Unable to read checkpoint size for '{s}': {s}\n",
+            .{ checkpoint_path, @errorName(err) },
+        );
+        return 1;
+    };
+
+    std.debug.print(
+        "Opened checkpoint: {s} ({d} bytes)\n",
+        .{ checkpoint_path, file_size },
+    );
     return 0;
 }
