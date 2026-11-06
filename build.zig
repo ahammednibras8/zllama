@@ -1,4 +1,26 @@
 const std = @import("std");
+const builtin = @import("builtin");
+
+const required_zig_version = std.SemanticVersion{
+    .major = 0,
+    .minor = 16,
+    .patch = 0,
+};
+
+comptime {
+    const current = builtin.zig_version;
+    const matches =
+        current.major == required_zig_version.major and
+        current.minor == required_zig_version.minor and
+        current.patch == required_zig_version.patch;
+
+    if (!matches) {
+        @compileError(std.fmt.comptimePrint(
+            "zllama requires Zig {}, but the current compiler is {}",
+            .{ required_zig_version, current },
+        ));
+    }
+}
 
 // Although this function looks imperative, it does not perform the build
 // directly and instead it mutates the build graph (`b`) that will be then
@@ -141,6 +163,17 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_exe_tests.step);
+
+    const fmt_check = b.addFmt(.{
+        .paths = &.{ "build.zig", "src" },
+        .check = true,
+    });
+
+    const check_step = b.step("check", "Check formatting, compilation, and tests");
+    check_step.dependOn(&fmt_check.step);
+    check_step.dependOn(&exe.step);
+    check_step.dependOn(&run_mod_tests.step);
+    check_step.dependOn(&run_exe_tests.step);
 
     // Just like flags, top level steps are also listed in the `--help` menu.
     //
