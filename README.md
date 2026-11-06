@@ -44,3 +44,7 @@ automated tests.
 This project independently reimplements the inference behavior described by
 [`karpathy/llama2.c`](https://github.com/karpathy/llama2.c). The original
 project is licensed under the MIT License.
+
+## License
+
+zllama is licensed under the [MIT License](LICENSE).
