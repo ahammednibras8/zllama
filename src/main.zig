@@ -1,4 +1,5 @@
 const std = @import("std");
+const Io = std.Io;
 
 pub fn main(init: std.process.Init) !void {
     const arena = init.arena.allocator();
@@ -22,6 +23,18 @@ pub fn main(init: std.process.Init) !void {
         std.process.exit(1);
     }
 
-    std.debug.print("command: {s}\n", .{args[1]});
-    std.debug.print("checkpoint: {s}\n", .{checkpoint_path});
+    const io = init.io;
+
+    const file = Io.Dir.cwd().openFile(io, checkpoint_path, .{
+        .mode = .read_only,
+    }) catch |err| {
+        std.debug.print(
+            "Unable to open checkpoint '{s}': {s}\n",
+            .{ checkpoint_path, @errorName(err) },
+        );
+        std.process.exit(1);
+    };
+    defer file.close(io);
+
+    std.debug.print("Opened checkpoint: {s}\n", .{checkpoint_path});
 }

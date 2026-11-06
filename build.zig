@@ -159,12 +159,8 @@ pub fn build(b: *std.Build) void {
 
     const run_cli_valid = b.addRunArtifact(exe);
     run_cli_valid.setName("test CLI valid argument count");
-    run_cli_valid.addArgs(&.{ "inspect", "stories15M.bin" });
-    run_cli_valid.expectStdErrEqual(
-        \\command: inspect
-        \\checkpoint: stories15M.bin
-        \\
-    );
+    run_cli_valid.addArgs(&.{ "inspect", "LICENSE" });
+    run_cli_valid.expectStdErrEqual("Opened checkpoint: LICENSE\n");
 
     const run_cli_too_few = b.addRunArtifact(exe);
     run_cli_too_few.setName("test CLI missing arguments");
@@ -193,6 +189,14 @@ pub fn build(b: *std.Build) void {
     run_cli_empty_path.expectStdErrEqual("Checkpoint path cannot be empty\n");
     run_cli_empty_path.expectExitCode(1);
 
+    const run_cli_missing_file = b.addRunArtifact(exe);
+    run_cli_missing_file.setName("test CLI missing checkpoint file");
+    run_cli_missing_file.addArgs(&.{ "inspect", "does-not-exist.bin" });
+    run_cli_missing_file.expectStdErrEqual(
+        "Unable to open checkpoint 'does-not-exist.bin': FileNotFound\n",
+    );
+    run_cli_missing_file.expectExitCode(1);
+
     // A top level step for running all tests. dependOn can be called multiple
     // times and since the two run steps do not depend on one another, this will
     // make the two of them run in parallel.
@@ -204,6 +208,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_cli_too_many.step);
     test_step.dependOn(&run_cli_unknown_command.step);
     test_step.dependOn(&run_cli_empty_path.step);
+    test_step.dependOn(&run_cli_missing_file.step);
 
     const fmt_check = b.addFmt(.{
         .paths = &.{ "build.zig", "src" },
@@ -220,6 +225,7 @@ pub fn build(b: *std.Build) void {
     check_step.dependOn(&run_cli_too_many.step);
     check_step.dependOn(&run_cli_unknown_command.step);
     check_step.dependOn(&run_cli_empty_path.step);
+    check_step.dependOn(&run_cli_missing_file.step);
 
     // Just like flags, top level steps are also listed in the `--help` menu.
     //
