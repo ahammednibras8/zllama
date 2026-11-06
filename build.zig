@@ -157,12 +157,46 @@ pub fn build(b: *std.Build) void {
     // A run step that will run the second test executable.
     const run_exe_tests = b.addRunArtifact(exe_tests);
 
+    const run_cli_valid = b.addRunArtifact(exe);
+    run_cli_valid.setName("test CLI valid argument count");
+    run_cli_valid.addArgs(&.{ "inspect", "stories15M.bin" });
+    run_cli_valid.expectStdErrEqual(
+        \\command: inspect
+        \\checkpoint: stories15M.bin
+        \\
+    );
+
+    const run_cli_too_few = b.addRunArtifact(exe);
+    run_cli_too_few.setName("test CLI missing arguments");
+    run_cli_too_few.expectStdErrEqual("Usage: zllama inspect <checkpoint>\n");
+    run_cli_too_few.expectExitCode(1);
+
+    const run_cli_too_many = b.addRunArtifact(exe);
+    run_cli_too_many.setName("test CLI excess arguments");
+    run_cli_too_many.addArgs(&.{ "inspect", "stories15M.bin", "extra" });
+    run_cli_too_many.expectStdErrEqual("Usage: zllama inspect <checkpoint>\n");
+    run_cli_too_many.expectExitCode(1);
+
+    const run_cli_unknown_command = b.addRunArtifact(exe);
+    run_cli_unknown_command.setName("test CLI unknown command");
+    run_cli_unknown_command.addArgs(&.{ "banana", "stories15M.bin" });
+    run_cli_unknown_command.expectStdErrEqual(
+        \\Unknown command: banana
+        \\Usage: zllama inspect <checkpoint>
+        \\
+    );
+    run_cli_unknown_command.expectExitCode(1);
+
     // A top level step for running all tests. dependOn can be called multiple
     // times and since the two run steps do not depend on one another, this will
     // make the two of them run in parallel.
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_exe_tests.step);
+    test_step.dependOn(&run_cli_valid.step);
+    test_step.dependOn(&run_cli_too_few.step);
+    test_step.dependOn(&run_cli_too_many.step);
+    test_step.dependOn(&run_cli_unknown_command.step);
 
     const fmt_check = b.addFmt(.{
         .paths = &.{ "build.zig", "src" },
@@ -174,6 +208,10 @@ pub fn build(b: *std.Build) void {
     check_step.dependOn(&exe.step);
     check_step.dependOn(&run_mod_tests.step);
     check_step.dependOn(&run_exe_tests.step);
+    check_step.dependOn(&run_cli_valid.step);
+    check_step.dependOn(&run_cli_too_few.step);
+    check_step.dependOn(&run_cli_too_many.step);
+    check_step.dependOn(&run_cli_unknown_command.step);
 
     // Just like flags, top level steps are also listed in the `--help` menu.
     //
