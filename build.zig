@@ -168,7 +168,7 @@ pub fn build(b: *std.Build) void {
         "\x01\x00\x00\x00";
     const valid_checkpoint = test_files.add(
         "valid-checkpoint.bin",
-        minimal_checkpoint_header ++ ("\x00" ** 48),
+        minimal_checkpoint_header ++ ("\x00" ** 44),
     );
     const unshared_checkpoint_header =
         "\x01\x00\x00\x00" ++
@@ -180,7 +180,7 @@ pub fn build(b: *std.Build) void {
         "\x01\x00\x00\x00";
     const valid_unshared_checkpoint = test_files.add(
         "valid-unshared-checkpoint.bin",
-        unshared_checkpoint_header ++ ("\x00" ** 52),
+        unshared_checkpoint_header ++ ("\x00" ** 48),
     );
     const truncated_checkpoint = test_files.add(
         "truncated-checkpoint.bin",
@@ -188,7 +188,7 @@ pub fn build(b: *std.Build) void {
     );
     const checkpoint_with_trailing_data = test_files.add(
         "checkpoint-with-trailing-data.bin",
-        minimal_checkpoint_header ++ ("\x00" ** 49),
+        minimal_checkpoint_header ++ ("\x00" ** 45),
     );
 
     const minimal_checkpoint_output =
@@ -224,7 +224,7 @@ pub fn build(b: *std.Build) void {
     run_cli_invalid_size.addFileArg(truncated_checkpoint);
     run_cli_invalid_size.expectExitCode(1);
     run_cli_invalid_size.expectStdErrMatch(
-        "has an invalid size: expected 76 bytes, found 28\n",
+        "has an invalid size: expected 72 bytes, found 28\n",
     );
     run_cli_invalid_size.expectStdOutEqual("");
 
@@ -234,7 +234,7 @@ pub fn build(b: *std.Build) void {
     run_cli_trailing_data.addFileArg(checkpoint_with_trailing_data);
     run_cli_trailing_data.expectExitCode(1);
     run_cli_trailing_data.expectStdErrMatch(
-        "has an invalid size: expected 76 bytes, found 77\n",
+        "has an invalid size: expected 72 bytes, found 73\n",
     );
     run_cli_trailing_data.expectStdOutEqual("");
 

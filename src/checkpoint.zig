@@ -21,6 +21,43 @@ pub const FileSizeError = ValidationError || error{
     CheckpointTooLarge,
 };
 
+pub const WeightCounts = struct {
+    token_embeddings: u128,
+
+    attention_norm: u128,
+    query: u128,
+    key: u128,
+    value: u128,
+    attention_output: u128,
+
+    feed_forward_norm: u128,
+    feed_forward_gate: u128,
+    feed_forward_down: u128,
+    feed_forward_up: u128,
+
+    final_norm: u128,
+    rope_real: u128,
+    rope_imaginary: u128,
+    classifier: u128,
+
+    pub fn total(self: WeightCounts) u128 {
+        return self.token_embeddings +
+            self.attention_norm +
+            self.query +
+            self.key +
+            self.value +
+            self.attention_output +
+            self.feed_forward_norm +
+            self.feed_forward_gate +
+            self.feed_forward_down +
+            self.feed_forward_up +
+            self.final_norm +
+            self.rope_real +
+            self.rope_imaginary +
+            self.classifier;
+    }
+};
+
 pub const Config = struct {
     dim: u32,
     hidden_dim: u32,
@@ -50,6 +87,16 @@ pub const Config = struct {
     }
 
     pub fn expectedFileSize(self: Config) FileSizeError!u64 {
+        const counts = try self.weightCounts();
+
+        const total_bytes =
+            @as(u128, header_size) + counts.total() * @sizeOf(f32);
+
+        return std.math.cast(u64, total_bytes) orelse
+            error.CheckpointTooLarge;
+    }
+
+    pub fn weightCounts(self: Config) ValidationError!WeightCounts {
         try self.validate();
 
         const dim: u128 = self.dim;
@@ -62,44 +109,30 @@ pub const Config = struct {
 
         const head_size = dim / n_heads;
         const kv_dim = head_size * n_kv_heads;
+        const rope_component_width = head_size / 2;
 
-        const token_embeddings = vocab_size * dim;
+        return .{
+            .token_embeddings = vocab_size * dim,
 
-        const attention_norm_weights = n_layers * dim;
-        const query_weights = n_layers * dim * dim;
-        const key_weights = n_layers * dim * kv_dim;
-        const value_weights = n_layers * dim * kv_dim;
-        const attention_output_weights = n_layers * dim * dim;
+            .attention_norm = n_layers * dim,
+            .query = n_layers * dim * dim,
+            .key = n_layers * dim * kv_dim,
+            .value = n_layers * dim * kv_dim,
+            .attention_output = n_layers * dim * dim,
 
-        const ffn_norm_weights = n_layers * dim;
-        const ffn_gate_weights = n_layers * dim * hidden_dim;
-        const ffn_down_weights = n_layers * hidden_dim * dim;
-        const ffn_up_weights = n_layers * dim * hidden_dim;
+            .feed_forward_norm = n_layers * dim,
+            .feed_forward_gate = n_layers * hidden_dim * dim,
+            .feed_forward_down = n_layers * dim * hidden_dim,
+            .feed_forward_up = n_layers * hidden_dim * dim,
 
-        const final_norm_weights = dim;
-        const rope_frequency_value = seq_len * head_size;
-
-        const classifier_weights = if (self.shared_classifier) 0 else vocab_size * dim;
-
-        const weight_count =
-            token_embeddings +
-            attention_norm_weights +
-            query_weights +
-            key_weights +
-            value_weights +
-            attention_output_weights +
-            ffn_norm_weights +
-            ffn_gate_weights +
-            ffn_down_weights +
-            ffn_up_weights +
-            final_norm_weights +
-            rope_frequency_value +
-            classifier_weights;
-
-        const total_bytes = @as(u128, header_size) + weight_count * @sizeOf(f32);
-
-        return std.math.cast(u64, total_bytes) orelse
-            error.CheckpointTooLarge;
+            .final_norm = dim,
+            .rope_real = seq_len * rope_component_width,
+            .rope_imaginary = seq_len * rope_component_width,
+            .classifier = if (self.shared_classifier)
+                0
+            else
+                vocab_size * dim,
+        };
     }
 };
 
@@ -237,6 +270,37 @@ test "calculate legacy stories15M checkpoint size" {
         @as(u64, 60_816_028),
         try config.expectedFileSize(),
     );
+}
+
+test "calculate every legacy stories15M tensor count" {
+    const config = Config{
+        .dim = 288,
+        .hidden_dim = 768,
+        .n_layers = 6,
+        .n_heads = 6,
+        .n_kv_heads = 6,
+        .vocab_size = 32_000,
+        .seq_len = 256,
+        .shared_classifier = true,
+    };
+
+    const counts = try config.weightCounts();
+
+    try std.testing.expectEqual(@as(u128, 9_216_000), counts.token_embeddings);
+    try std.testing.expectEqual(@as(u128, 1_728), counts.attention_norm);
+    try std.testing.expectEqual(@as(u128, 497_664), counts.query);
+    try std.testing.expectEqual(@as(u128, 497_664), counts.key);
+    try std.testing.expectEqual(@as(u128, 497_664), counts.value);
+    try std.testing.expectEqual(@as(u128, 497_664), counts.attention_output);
+    try std.testing.expectEqual(@as(u128, 1_728), counts.feed_forward_norm);
+    try std.testing.expectEqual(@as(u128, 1_327_104), counts.feed_forward_gate);
+    try std.testing.expectEqual(@as(u128, 1_327_104), counts.feed_forward_down);
+    try std.testing.expectEqual(@as(u128, 1_327_104), counts.feed_forward_up);
+    try std.testing.expectEqual(@as(u128, 288), counts.final_norm);
+    try std.testing.expectEqual(@as(u128, 6_144), counts.rope_real);
+    try std.testing.expectEqual(@as(u128, 6_144), counts.rope_imaginary);
+    try std.testing.expectEqual(@as(u128, 0), counts.classifier);
+    try std.testing.expectEqual(@as(u128, 15_204_000), counts.total());
 }
 
 test "separate classifier weights increase checkpoint size" {
