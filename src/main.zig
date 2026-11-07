@@ -61,7 +61,7 @@ fn run(init: std.process.Init) !u8 {
         return 1;
     }
 
-    var header_bytes: [@as(usize, @intCast(zllama.checkpoint.header_size))]u8 = undefined;
+    var header_bytes: zllama.checkpoint.Header = undefined;
 
     var file_reader = file.reader(io, &.{});
     file_reader.interface.readSliceAll(&header_bytes) catch |err| {
@@ -72,22 +72,21 @@ fn run(init: std.process.Init) !u8 {
         return 1;
     };
 
-    const dimension = std.mem.readInt(i32, header_bytes[0..4], .little);
-    const hidden_dimension = std.mem.readInt(i32, header_bytes[4..8], .little);
-    const layer_count = std.mem.readInt(i32, header_bytes[8..12], .little);
-    const attention_head_count = std.mem.readInt(i32, header_bytes[12..16], .little);
-    const kv_head_count = std.mem.readInt(i32, header_bytes[16..20], .little);
-    const raw_vocabulary_size = std.mem.readInt(i32, header_bytes[20..24], .little);
-    const vocabulary_size = @abs(raw_vocabulary_size);
-    const sequence_length = std.mem.readInt(i32, header_bytes[24..28], .little);
+    const config = zllama.checkpoint.decodeHeader(&header_bytes) catch |err| {
+        std.debug.print(
+            "Invalid checkpoint configuration in '{s}': {s}\n",
+            .{ checkpoint_path, @errorName(err) },
+        );
+        return 1;
+    };
 
-    std.debug.print("Dimension: {d}\n", .{dimension});
-    std.debug.print("Hidden dimension: {d}\n", .{hidden_dimension});
-    std.debug.print("Layers: {d}\n", .{layer_count});
-    std.debug.print("Attention heads: {d}\n", .{attention_head_count});
-    std.debug.print("KV heads: {d}\n", .{kv_head_count});
-    std.debug.print("Vocabulary size: {d}\n", .{vocabulary_size});
-    std.debug.print("Sequence length: {d}\n", .{sequence_length});
+    std.debug.print("Dimension: {d}\n", .{config.dim});
+    std.debug.print("Hidden dimension: {d}\n", .{config.hidden_dim});
+    std.debug.print("Layers: {d}\n", .{config.n_layers});
+    std.debug.print("Attention heads: {d}\n", .{config.n_heads});
+    std.debug.print("KV heads: {d}\n", .{config.n_kv_heads});
+    std.debug.print("Vocabulary size: {d}\n", .{config.vocab_size});
+    std.debug.print("Sequence length: {d}\n", .{config.seq_len});
 
     return 0;
 }

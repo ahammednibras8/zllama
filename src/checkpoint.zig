@@ -3,6 +3,7 @@
 const std = @import("std");
 
 pub const header_size: u64 = 7 * @sizeOf(i32);
+pub const Header = [@as(usize, @intCast(header_size))]u8;
 
 pub const ValidationError = error{
     InvalidDimension,
@@ -45,8 +46,92 @@ pub const Config = struct {
     }
 };
 
+pub fn decodeHeader(bytes: *const Header) ValidationError!Config {
+    const raw_dimension = std.mem.readInt(i32, bytes[0..4], .little);
+    const raw_hidden_dimension = std.mem.readInt(i32, bytes[4..8], .little);
+    const raw_layer_count = std.mem.readInt(i32, bytes[8..12], .little);
+    const raw_attention_head_count = std.mem.readInt(i32, bytes[12..16], .little);
+    const raw_kv_head_count = std.mem.readInt(i32, bytes[16..20], .little);
+    const raw_vocabulary_size = std.mem.readInt(i32, bytes[20..24], .little);
+    const raw_sequence_length = std.mem.readInt(i32, bytes[24..28], .little);
+
+    const config = Config{
+        .dim = std.math.cast(u32, raw_dimension) orelse
+            return error.InvalidDimension,
+        .hidden_dim = std.math.cast(u32, raw_hidden_dimension) orelse
+            return error.InvalidHiddenDimension,
+        .n_layers = std.math.cast(u32, raw_layer_count) orelse
+            return error.InvalidLayerCount,
+        .n_heads = std.math.cast(u32, raw_attention_head_count) orelse
+            return error.InvalidAttentionHeadCount,
+        .n_kv_heads = std.math.cast(u32, raw_kv_head_count) orelse
+            return error.InvalidKvHeadCount,
+        .vocab_size = @abs(raw_vocabulary_size),
+        .seq_len = std.math.cast(u32, raw_sequence_length) orelse
+            return error.InvalidSequenceLength,
+        .shared_classifier = raw_vocabulary_size > 0,
+    };
+
+    try config.validate();
+    return config;
+}
+
 test "legacy checkpoint header contains seven 32-bit integers" {
     try std.testing.expectEqual(@as(u64, 28), header_size);
+}
+
+test "decode legacy checkpoint header" {
+    const header = Header{
+        0x20, 0x01, 0x00, 0x00,
+        0x00, 0x03, 0x00, 0x00,
+        0x06, 0x00, 0x00, 0x00,
+        0x06, 0x00, 0x00, 0x00,
+        0x06, 0x00, 0x00, 0x00,
+        0x00, 0x7d, 0x00, 0x00,
+        0x00, 0x01, 0x00, 0x00,
+    };
+
+    const config = try decodeHeader(&header);
+
+    try std.testing.expectEqual(@as(u32, 288), config.dim);
+    try std.testing.expectEqual(@as(u32, 768), config.hidden_dim);
+    try std.testing.expectEqual(@as(u32, 6), config.n_layers);
+    try std.testing.expectEqual(@as(u32, 6), config.n_heads);
+    try std.testing.expectEqual(@as(u32, 6), config.n_kv_heads);
+    try std.testing.expectEqual(@as(u32, 32_000), config.vocab_size);
+    try std.testing.expectEqual(@as(u32, 256), config.seq_len);
+    try std.testing.expect(config.shared_classifier);
+}
+
+test "negative vocabulary size means classifier weights are not shared" {
+    const header = Header{
+        0x20, 0x01, 0x00, 0x00,
+        0x00, 0x03, 0x00, 0x00,
+        0x06, 0x00, 0x00, 0x00,
+        0x06, 0x00, 0x00, 0x00,
+        0x06, 0x00, 0x00, 0x00,
+        0x00, 0x83, 0xff, 0xff,
+        0x00, 0x01, 0x00, 0x00,
+    };
+
+    const config = try decodeHeader(&header);
+
+    try std.testing.expectEqual(@as(u32, 32_000), config.vocab_size);
+    try std.testing.expect(!config.shared_classifier);
+}
+
+test "decode rejects a negative model dimension" {
+    const header = Header{
+        0xff, 0xff, 0xff, 0xff,
+        0x00, 0x03, 0x00, 0x00,
+        0x06, 0x00, 0x00, 0x00,
+        0x06, 0x00, 0x00, 0x00,
+        0x06, 0x00, 0x00, 0x00,
+        0x00, 0x7d, 0x00, 0x00,
+        0x00, 0x01, 0x00, 0x00,
+    };
+
+    try std.testing.expectError(error.InvalidDimension, decodeHeader(&header));
 }
 
 test "valid model configuration passes validation" {
