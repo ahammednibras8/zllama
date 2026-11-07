@@ -3,6 +3,7 @@ const std = @import("std");
 const Io = std.Io;
 
 pub const checkpoint = @import("checkpoint.zig");
+pub const weights = @import("weights.zig");
 
 /// This is a documentation comment to explain the `printAnotherMessage` function below.
 ///
