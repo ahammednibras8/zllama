@@ -157,12 +157,146 @@ pub fn build(b: *std.Build) void {
     // A run step that will run the second test executable.
     const run_exe_tests = b.addRunArtifact(exe_tests);
 
+    const test_files = b.addWriteFiles();
+    const minimal_checkpoint_header =
+        "\x01\x00\x00\x00" ++
+        "\x01\x00\x00\x00" ++
+        "\x01\x00\x00\x00" ++
+        "\x01\x00\x00\x00" ++
+        "\x01\x00\x00\x00" ++
+        "\x01\x00\x00\x00" ++
+        "\x01\x00\x00\x00";
+    const valid_checkpoint = test_files.add(
+        "valid-checkpoint.bin",
+        minimal_checkpoint_header ++ ("\x00" ** 48),
+    );
+    const unshared_checkpoint_header =
+        "\x01\x00\x00\x00" ++
+        "\x01\x00\x00\x00" ++
+        "\x01\x00\x00\x00" ++
+        "\x01\x00\x00\x00" ++
+        "\x01\x00\x00\x00" ++
+        "\xff\xff\xff\xff" ++
+        "\x01\x00\x00\x00";
+    const valid_unshared_checkpoint = test_files.add(
+        "valid-unshared-checkpoint.bin",
+        unshared_checkpoint_header ++ ("\x00" ** 52),
+    );
+    const truncated_checkpoint = test_files.add(
+        "truncated-checkpoint.bin",
+        minimal_checkpoint_header,
+    );
+    const checkpoint_with_trailing_data = test_files.add(
+        "checkpoint-with-trailing-data.bin",
+        minimal_checkpoint_header ++ ("\x00" ** 49),
+    );
+
+    const minimal_checkpoint_output =
+        \\Dimension: 1
+        \\Hidden dimension: 1
+        \\Layers: 1
+        \\Attention heads: 1
+        \\KV heads: 1
+        \\Vocabulary size: 1
+        \\Sequence length: 1
+        \\
+    ;
+
+    const run_cli_valid = b.addRunArtifact(exe);
+    run_cli_valid.setName("test CLI inspects complete checkpoint");
+    run_cli_valid.addArg("inspect");
+    run_cli_valid.addFileArg(valid_checkpoint);
+    run_cli_valid.expectStdOutEqual(minimal_checkpoint_output);
+    run_cli_valid.expectStdErrEqual("");
+    run_cli_valid.expectExitCode(0);
+
+    const run_cli_valid_unshared = b.addRunArtifact(exe);
+    run_cli_valid_unshared.setName("test CLI inspects unshared-classifier checkpoint");
+    run_cli_valid_unshared.addArg("inspect");
+    run_cli_valid_unshared.addFileArg(valid_unshared_checkpoint);
+    run_cli_valid_unshared.expectStdOutEqual(minimal_checkpoint_output);
+    run_cli_valid_unshared.expectStdErrEqual("");
+    run_cli_valid_unshared.expectExitCode(0);
+
+    const run_cli_invalid_size = b.addRunArtifact(exe);
+    run_cli_invalid_size.setName("test CLI rejects truncated checkpoint weights");
+    run_cli_invalid_size.addArg("inspect");
+    run_cli_invalid_size.addFileArg(truncated_checkpoint);
+    run_cli_invalid_size.expectExitCode(1);
+    run_cli_invalid_size.expectStdErrMatch(
+        "has an invalid size: expected 76 bytes, found 28\n",
+    );
+    run_cli_invalid_size.expectStdOutEqual("");
+
+    const run_cli_trailing_data = b.addRunArtifact(exe);
+    run_cli_trailing_data.setName("test CLI rejects checkpoint trailing data");
+    run_cli_trailing_data.addArg("inspect");
+    run_cli_trailing_data.addFileArg(checkpoint_with_trailing_data);
+    run_cli_trailing_data.expectExitCode(1);
+    run_cli_trailing_data.expectStdErrMatch(
+        "has an invalid size: expected 76 bytes, found 77\n",
+    );
+    run_cli_trailing_data.expectStdOutEqual("");
+
+    const run_cli_too_few = b.addRunArtifact(exe);
+    run_cli_too_few.setName("test CLI missing arguments");
+    run_cli_too_few.expectStdErrEqual("Usage: zllama inspect <checkpoint>\n");
+    run_cli_too_few.expectExitCode(1);
+
+    const run_cli_too_many = b.addRunArtifact(exe);
+    run_cli_too_many.setName("test CLI excess arguments");
+    run_cli_too_many.addArgs(&.{ "inspect", "stories15M.bin", "extra" });
+    run_cli_too_many.expectStdErrEqual("Usage: zllama inspect <checkpoint>\n");
+    run_cli_too_many.expectExitCode(1);
+
+    const run_cli_unknown_command = b.addRunArtifact(exe);
+    run_cli_unknown_command.setName("test CLI unknown command");
+    run_cli_unknown_command.addArgs(&.{ "banana", "stories15M.bin" });
+    run_cli_unknown_command.expectStdErrEqual(
+        \\Unknown command: banana
+        \\Usage: zllama inspect <checkpoint>
+        \\
+    );
+    run_cli_unknown_command.expectExitCode(1);
+
+    const run_cli_empty_path = b.addRunArtifact(exe);
+    run_cli_empty_path.setName("test CLI empty checkpoint path");
+    run_cli_empty_path.addArgs(&.{ "inspect", "" });
+    run_cli_empty_path.expectStdErrEqual("Checkpoint path cannot be empty\n");
+    run_cli_empty_path.expectExitCode(1);
+
+    const run_cli_missing_file = b.addRunArtifact(exe);
+    run_cli_missing_file.setName("test CLI missing checkpoint file");
+    run_cli_missing_file.addArgs(&.{ "inspect", "does-not-exist.bin" });
+    run_cli_missing_file.expectStdErrEqual(
+        "Unable to open checkpoint 'does-not-exist.bin': FileNotFound\n",
+    );
+    run_cli_missing_file.expectExitCode(1);
+
+    const run_cli_short_file = b.addRunArtifact(exe);
+    run_cli_short_file.setName("test CLI truncated checkpoint header");
+    run_cli_short_file.addArgs(&.{ "inspect", ".gitattributes" });
+    run_cli_short_file.expectStdErrEqual(
+        "Checkpoint '.gitattributes' is too small: expected at least 28 bytes, found 19\n",
+    );
+    run_cli_short_file.expectExitCode(1);
+
     // A top level step for running all tests. dependOn can be called multiple
     // times and since the two run steps do not depend on one another, this will
     // make the two of them run in parallel.
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_exe_tests.step);
+    test_step.dependOn(&run_cli_valid.step);
+    test_step.dependOn(&run_cli_valid_unshared.step);
+    test_step.dependOn(&run_cli_invalid_size.step);
+    test_step.dependOn(&run_cli_trailing_data.step);
+    test_step.dependOn(&run_cli_too_few.step);
+    test_step.dependOn(&run_cli_too_many.step);
+    test_step.dependOn(&run_cli_unknown_command.step);
+    test_step.dependOn(&run_cli_empty_path.step);
+    test_step.dependOn(&run_cli_missing_file.step);
+    test_step.dependOn(&run_cli_short_file.step);
 
     const fmt_check = b.addFmt(.{
         .paths = &.{ "build.zig", "src" },
@@ -174,6 +308,16 @@ pub fn build(b: *std.Build) void {
     check_step.dependOn(&exe.step);
     check_step.dependOn(&run_mod_tests.step);
     check_step.dependOn(&run_exe_tests.step);
+    check_step.dependOn(&run_cli_valid.step);
+    check_step.dependOn(&run_cli_valid_unshared.step);
+    check_step.dependOn(&run_cli_invalid_size.step);
+    check_step.dependOn(&run_cli_trailing_data.step);
+    check_step.dependOn(&run_cli_too_few.step);
+    check_step.dependOn(&run_cli_too_many.step);
+    check_step.dependOn(&run_cli_unknown_command.step);
+    check_step.dependOn(&run_cli_empty_path.step);
+    check_step.dependOn(&run_cli_missing_file.step);
+    check_step.dependOn(&run_cli_short_file.step);
 
     // Just like flags, top level steps are also listed in the `--help` menu.
     //

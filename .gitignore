@@ -8,3 +8,5 @@ zig-out/
 
 # macOS Finder metadata
 .DS_Store
+
+/stories15M.bin

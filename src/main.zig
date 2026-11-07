@@ -1,71 +1,113 @@
 const std = @import("std");
 const Io = std.Io;
-
 const zllama = @import("zllama");
 
 pub fn main(init: std.process.Init) !void {
-    // Prints to stderr, unbuffered, ignoring potential errors.
-    std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
+    const exit_code = try run(init);
 
-    // This is appropriate for anything that lives as long as the process.
-    const arena: std.mem.Allocator = init.arena.allocator();
+    if (exit_code != 0) {
+        std.process.exit(exit_code);
+    }
+}
 
-    // Accessing command line arguments:
+fn run(init: std.process.Init) !u8 {
+    const arena = init.arena.allocator();
     const args = try init.minimal.args.toSlice(arena);
-    for (args) |arg| {
-        std.log.info("arg: {s}", .{arg});
+
+    if (args.len != 3) {
+        std.debug.print("Usage: zllama inspect <checkpoint>\n", .{});
+        return 1;
     }
 
-    // In order to do I/O operations need an `Io` instance.
+    if (!std.mem.eql(u8, args[1], "inspect")) {
+        std.debug.print("Unknown command: {s}\n", .{args[1]});
+        std.debug.print("Usage: zllama inspect <checkpoint>\n", .{});
+        return 1;
+    }
+
+    const checkpoint_path = args[2];
+
+    if (checkpoint_path.len == 0) {
+        std.debug.print("Checkpoint path cannot be empty\n", .{});
+        return 1;
+    }
+
     const io = init.io;
 
-    // Stdout is for the actual output of your application, for example if you
-    // are implementing gzip, then only the compressed bytes should be sent to
-    // stdout, not any debugging messages.
+    const file = Io.Dir.cwd().openFile(io, checkpoint_path, .{
+        .mode = .read_only,
+    }) catch |err| {
+        std.debug.print(
+            "Unable to open checkpoint '{s}': {s}\n",
+            .{ checkpoint_path, @errorName(err) },
+        );
+        return 1;
+    };
+    defer file.close(io);
+
+    const file_size = file.length(io) catch |err| {
+        std.debug.print(
+            "Unable to read checkpoint size for '{s}': {s}\n",
+            .{ checkpoint_path, @errorName(err) },
+        );
+        return 1;
+    };
+
+    if (file_size < zllama.checkpoint.header_size) {
+        std.debug.print(
+            "Checkpoint '{s}' is too small: expected at least {d} bytes, found {d}\n",
+            .{ checkpoint_path, zllama.checkpoint.header_size, file_size },
+        );
+        return 1;
+    }
+
+    var header_bytes: zllama.checkpoint.Header = undefined;
+
+    var file_reader = file.reader(io, &.{});
+    file_reader.interface.readSliceAll(&header_bytes) catch |err| {
+        std.debug.print(
+            "Unable to read checkpoint header from '{s}': {s}\n",
+            .{ checkpoint_path, @errorName(err) },
+        );
+        return 1;
+    };
+
+    const config = zllama.checkpoint.decodeHeader(&header_bytes) catch |err| {
+        std.debug.print(
+            "Invalid checkpoint configuration in '{s}': {s}\n",
+            .{ checkpoint_path, @errorName(err) },
+        );
+        return 1;
+    };
+
+    const expected_file_size = config.expectedFileSize() catch |err| {
+        std.debug.print(
+            "Unable to calculate checkpoint size for '{s}': {s}\n",
+            .{ checkpoint_path, @errorName(err) },
+        );
+        return 1;
+    };
+
+    if (file_size != expected_file_size) {
+        std.debug.print(
+            "Checkpoint '{s}' has an invalid size: expected {d} bytes, found {d}\n",
+            .{ checkpoint_path, expected_file_size, file_size },
+        );
+        return 1;
+    }
+
     var stdout_buffer: [1024]u8 = undefined;
     var stdout_file_writer: Io.File.Writer = .init(.stdout(), io, &stdout_buffer);
-    const stdout_writer = &stdout_file_writer.interface;
+    const stdout = &stdout_file_writer.interface;
 
-    try zllama.printAnotherMessage(stdout_writer);
+    try stdout.print("Dimension: {d}\n", .{config.dim});
+    try stdout.print("Hidden dimension: {d}\n", .{config.hidden_dim});
+    try stdout.print("Layers: {d}\n", .{config.n_layers});
+    try stdout.print("Attention heads: {d}\n", .{config.n_heads});
+    try stdout.print("KV heads: {d}\n", .{config.n_kv_heads});
+    try stdout.print("Vocabulary size: {d}\n", .{config.vocab_size});
+    try stdout.print("Sequence length: {d}\n", .{config.seq_len});
+    try stdout.flush();
 
-    try stdout_writer.flush(); // Don't forget to flush!
-}
-
-test "simple test" {
-    const gpa = std.testing.allocator;
-    var list: std.ArrayList(i32) = .empty;
-    defer list.deinit(gpa); // Try commenting this out and see if zig detects the memory leak!
-    try list.append(gpa, 42);
-    try std.testing.expectEqual(@as(i32, 42), list.pop());
-}
-
-test "fuzz example" {
-    try std.testing.fuzz({}, testOne, .{});
-}
-
-fn testOne(context: void, smith: *std.testing.Smith) !void {
-    _ = context;
-    // Try passing `--fuzz` to `zig build test` and see if it manages to fail this test case!
-
-    const gpa = std.testing.allocator;
-    var list: std.ArrayList(u8) = .empty;
-    defer list.deinit(gpa);
-    while (!smith.eos()) switch (smith.value(enum { add_data, dup_data })) {
-        .add_data => {
-            const slice = try list.addManyAsSlice(gpa, smith.value(u4));
-            smith.bytes(slice);
-        },
-        .dup_data => {
-            if (list.items.len == 0) continue;
-            if (list.items.len > std.math.maxInt(u32)) return error.SkipZigTest;
-            const len = smith.valueRangeAtMost(u32, 1, @min(32, list.items.len));
-            const off = smith.valueRangeAtMost(u32, 0, @intCast(list.items.len - len));
-            try list.appendSlice(gpa, list.items[off..][0..len]);
-            try std.testing.expectEqualSlices(
-                u8,
-                list.items[off..][0..len],
-                list.items[list.items.len - len ..],
-            );
-        },
-    };
+    return 0;
 }
