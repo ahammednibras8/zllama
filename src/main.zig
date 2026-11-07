@@ -80,6 +80,22 @@ fn run(init: std.process.Init) !u8 {
         return 1;
     };
 
+    const expected_file_size = config.expectedFileSize() catch |err| {
+        std.debug.print(
+            "Unable to calculate checkpoint size for '{s}': {s}\n",
+            .{ checkpoint_path, @errorName(err) },
+        );
+        return 1;
+    };
+
+    if (file_size != expected_file_size) {
+        std.debug.print(
+            "Checkpoint '{s}' has an invalid size: expected {d} bytes, found {d}\n",
+            .{ checkpoint_path, expected_file_size, file_size },
+        );
+        return 1;
+    }
+
     std.debug.print("Dimension: {d}\n", .{config.dim});
     std.debug.print("Hidden dimension: {d}\n", .{config.hidden_dim});
     std.debug.print("Layers: {d}\n", .{config.n_layers});

@@ -158,32 +158,47 @@ pub fn build(b: *std.Build) void {
     const run_exe_tests = b.addRunArtifact(exe_tests);
 
     const test_files = b.addWriteFiles();
-    const valid_checkpoint_header = test_files.add(
-        "stories15M-header.bin",
-        "\x20\x01\x00\x00" ++
-            "\x00\x03\x00\x00" ++
-            "\x06\x00\x00\x00" ++
-            "\x06\x00\x00\x00" ++
-            "\x06\x00\x00\x00" ++
-            "\x00\x7d\x00\x00" ++
-            "\x00\x01\x00\x00",
+    const minimal_checkpoint_header =
+        "\x01\x00\x00\x00" ++
+        "\x01\x00\x00\x00" ++
+        "\x01\x00\x00\x00" ++
+        "\x01\x00\x00\x00" ++
+        "\x01\x00\x00\x00" ++
+        "\x01\x00\x00\x00" ++
+        "\x01\x00\x00\x00";
+    const valid_checkpoint = test_files.add(
+        "valid-checkpoint.bin",
+        minimal_checkpoint_header ++ ("\x00" ** 48),
+    );
+    const truncated_checkpoint = test_files.add(
+        "truncated-checkpoint.bin",
+        minimal_checkpoint_header,
     );
 
     const run_cli_valid = b.addRunArtifact(exe);
-    run_cli_valid.setName("test CLI reads complete checkpoint header");
+    run_cli_valid.setName("test CLI inspects complete checkpoint");
     run_cli_valid.addArg("inspect");
-    run_cli_valid.addFileArg(valid_checkpoint_header);
+    run_cli_valid.addFileArg(valid_checkpoint);
     run_cli_valid.expectStdErrEqual(
-        \\Dimension: 288
-        \\Hidden dimension: 768
-        \\Layers: 6
-        \\Attention heads: 6
-        \\KV heads: 6
-        \\Vocabulary size: 32000
-        \\Sequence length: 256
+        \\Dimension: 1
+        \\Hidden dimension: 1
+        \\Layers: 1
+        \\Attention heads: 1
+        \\KV heads: 1
+        \\Vocabulary size: 1
+        \\Sequence length: 1
         \\
     );
     run_cli_valid.expectExitCode(0);
+
+    const run_cli_invalid_size = b.addRunArtifact(exe);
+    run_cli_invalid_size.setName("test CLI rejects truncated checkpoint weights");
+    run_cli_invalid_size.addArg("inspect");
+    run_cli_invalid_size.addFileArg(truncated_checkpoint);
+    run_cli_invalid_size.expectStdErrMatch(
+        "has an invalid size: expected 76 bytes, found 28\n",
+    );
+    run_cli_invalid_size.expectExitCode(1);
 
     const run_cli_too_few = b.addRunArtifact(exe);
     run_cli_too_few.setName("test CLI missing arguments");
@@ -235,6 +250,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_exe_tests.step);
     test_step.dependOn(&run_cli_valid.step);
+    test_step.dependOn(&run_cli_invalid_size.step);
     test_step.dependOn(&run_cli_too_few.step);
     test_step.dependOn(&run_cli_too_many.step);
     test_step.dependOn(&run_cli_unknown_command.step);
@@ -253,6 +269,7 @@ pub fn build(b: *std.Build) void {
     check_step.dependOn(&run_mod_tests.step);
     check_step.dependOn(&run_exe_tests.step);
     check_step.dependOn(&run_cli_valid.step);
+    check_step.dependOn(&run_cli_invalid_size.step);
     check_step.dependOn(&run_cli_too_few.step);
     check_step.dependOn(&run_cli_too_many.step);
     check_step.dependOn(&run_cli_unknown_command.step);

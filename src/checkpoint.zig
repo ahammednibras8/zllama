@@ -17,6 +17,10 @@ pub const ValidationError = error{
     IncompatibleKvHeads,
 };
 
+pub const FileSizeError = ValidationError || error{
+    CheckpointTooLarge,
+};
+
 pub const Config = struct {
     dim: u32,
     hidden_dim: u32,
@@ -43,6 +47,59 @@ pub const Config = struct {
         if (self.n_heads % self.n_kv_heads != 0) {
             return error.IncompatibleKvHeads;
         }
+    }
+
+    pub fn expectedFileSize(self: Config) FileSizeError!u64 {
+        try self.validate();
+
+        const dim: u128 = self.dim;
+        const hidden_dim: u128 = self.hidden_dim;
+        const n_layers: u128 = self.n_layers;
+        const n_heads: u128 = self.n_heads;
+        const n_kv_heads: u128 = self.n_kv_heads;
+        const vocab_size: u128 = self.vocab_size;
+        const seq_len: u128 = self.seq_len;
+
+        const head_size = dim / n_heads;
+        const kv_dim = head_size * n_kv_heads;
+
+        const token_embeddings = vocab_size * dim;
+
+        const attention_norm_weights = n_layers * dim;
+        const query_weights = n_layers * dim * dim;
+        const key_weights = n_layers * dim * kv_dim;
+        const value_weights = n_layers * dim * kv_dim;
+        const attention_output_weights = n_layers * dim * dim;
+
+        const ffn_norm_weights = n_layers * dim;
+        const ffn_gate_weights = n_layers * dim * hidden_dim;
+        const ffn_down_weights = n_layers * hidden_dim * dim;
+        const ffn_up_weights = n_layers * dim * hidden_dim;
+
+        const final_norm_weights = dim;
+        const rope_frequency_value = seq_len * head_size;
+
+        const classifier_weights = if (self.shared_classifier) 0 else vocab_size * dim;
+
+        const weight_count =
+            token_embeddings +
+            attention_norm_weights +
+            query_weights +
+            key_weights +
+            value_weights +
+            attention_output_weights +
+            ffn_norm_weights +
+            ffn_gate_weights +
+            ffn_down_weights +
+            ffn_up_weights +
+            final_norm_weights +
+            rope_frequency_value +
+            classifier_weights;
+
+        const total_bytes = @as(u128, header_size) + weight_count * @sizeOf(f32);
+
+        return std.math.cast(u64, total_bytes) orelse
+            error.CheckpointTooLarge;
     }
 };
 
@@ -147,6 +204,42 @@ test "valid model configuration passes validation" {
     };
 
     try config.validate();
+}
+
+test "calculate legacy stories15M checkpoint size" {
+    const config = Config{
+        .dim = 288,
+        .hidden_dim = 768,
+        .n_layers = 6,
+        .n_heads = 6,
+        .n_kv_heads = 6,
+        .vocab_size = 32_000,
+        .seq_len = 256,
+        .shared_classifier = true,
+    };
+
+    try std.testing.expectEqual(
+        @as(u64, 60_816_028),
+        try config.expectedFileSize(),
+    );
+}
+
+test "separate classifier weights increase checkpoint size" {
+    const config = Config{
+        .dim = 288,
+        .hidden_dim = 768,
+        .n_layers = 6,
+        .n_heads = 6,
+        .n_kv_heads = 6,
+        .vocab_size = 32_000,
+        .seq_len = 256,
+        .shared_classifier = false,
+    };
+
+    try std.testing.expectEqual(
+        @as(u64, 97_680_028),
+        try config.expectedFileSize(),
+    );
 }
 
 test "model dimension must divide evenly across attention heads" {
