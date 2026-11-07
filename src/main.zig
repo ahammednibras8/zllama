@@ -96,13 +96,18 @@ fn run(init: std.process.Init) !u8 {
         return 1;
     }
 
-    std.debug.print("Dimension: {d}\n", .{config.dim});
-    std.debug.print("Hidden dimension: {d}\n", .{config.hidden_dim});
-    std.debug.print("Layers: {d}\n", .{config.n_layers});
-    std.debug.print("Attention heads: {d}\n", .{config.n_heads});
-    std.debug.print("KV heads: {d}\n", .{config.n_kv_heads});
-    std.debug.print("Vocabulary size: {d}\n", .{config.vocab_size});
-    std.debug.print("Sequence length: {d}\n", .{config.seq_len});
+    var stdout_buffer: [1024]u8 = undefined;
+    var stdout_file_writer: Io.File.Writer = .init(.stdout(), io, &stdout_buffer);
+    const stdout = &stdout_file_writer.interface;
+
+    try stdout.print("Dimension: {d}\n", .{config.dim});
+    try stdout.print("Hidden dimension: {d}\n", .{config.hidden_dim});
+    try stdout.print("Layers: {d}\n", .{config.n_layers});
+    try stdout.print("Attention heads: {d}\n", .{config.n_heads});
+    try stdout.print("KV heads: {d}\n", .{config.n_kv_heads});
+    try stdout.print("Vocabulary size: {d}\n", .{config.vocab_size});
+    try stdout.print("Sequence length: {d}\n", .{config.seq_len});
+    try stdout.flush();
 
     return 0;
 }

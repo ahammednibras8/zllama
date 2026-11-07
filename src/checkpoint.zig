@@ -191,6 +191,21 @@ test "decode rejects a negative model dimension" {
     try std.testing.expectError(error.InvalidDimension, decodeHeader(&header));
 }
 
+test "decode rejects a negative attention head count" {
+    var header = Header{
+        0x20, 0x01, 0x00, 0x00,
+        0x00, 0x03, 0x00, 0x00,
+        0x06, 0x00, 0x00, 0x00,
+        0x06, 0x00, 0x00, 0x00,
+        0x06, 0x00, 0x00, 0x00,
+        0x00, 0x7d, 0x00, 0x00,
+        0x00, 0x01, 0x00, 0x00,
+    };
+    std.mem.writeInt(i32, header[12..16], -1, .little);
+
+    try std.testing.expectError(error.InvalidAttentionHeadCount, decodeHeader(&header));
+}
+
 test "valid model configuration passes validation" {
     const config = Config{
         .dim = 288,
@@ -240,6 +255,63 @@ test "separate classifier weights increase checkpoint size" {
         @as(u64, 97_680_028),
         try config.expectedFileSize(),
     );
+}
+
+test "configuration rejects zero dimensions and head counts" {
+    const zero_dimension = Config{
+        .dim = 0,
+        .hidden_dim = 1,
+        .n_layers = 1,
+        .n_heads = 1,
+        .n_kv_heads = 1,
+        .vocab_size = 1,
+        .seq_len = 1,
+        .shared_classifier = true,
+    };
+    try std.testing.expectError(error.InvalidDimension, zero_dimension.validate());
+
+    const zero_heads = Config{
+        .dim = 1,
+        .hidden_dim = 1,
+        .n_layers = 1,
+        .n_heads = 0,
+        .n_kv_heads = 1,
+        .vocab_size = 1,
+        .seq_len = 1,
+        .shared_classifier = true,
+    };
+    try std.testing.expectError(error.InvalidAttentionHeadCount, zero_heads.validate());
+}
+
+test "attention heads must divide evenly across key value heads" {
+    const config = Config{
+        .dim = 288,
+        .hidden_dim = 768,
+        .n_layers = 6,
+        .n_heads = 6,
+        .n_kv_heads = 4,
+        .vocab_size = 32_000,
+        .seq_len = 256,
+        .shared_classifier = true,
+    };
+
+    try std.testing.expectError(error.IncompatibleKvHeads, config.validate());
+}
+
+test "checkpoint size rejects values larger than u64" {
+    const maximum = std.math.maxInt(u32);
+    const config = Config{
+        .dim = maximum,
+        .hidden_dim = maximum,
+        .n_layers = maximum,
+        .n_heads = 1,
+        .n_kv_heads = 1,
+        .vocab_size = maximum,
+        .seq_len = maximum,
+        .shared_classifier = false,
+    };
+
+    try std.testing.expectError(error.CheckpointTooLarge, config.expectedFileSize());
 }
 
 test "model dimension must divide evenly across attention heads" {

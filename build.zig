@@ -170,16 +170,28 @@ pub fn build(b: *std.Build) void {
         "valid-checkpoint.bin",
         minimal_checkpoint_header ++ ("\x00" ** 48),
     );
+    const unshared_checkpoint_header =
+        "\x01\x00\x00\x00" ++
+        "\x01\x00\x00\x00" ++
+        "\x01\x00\x00\x00" ++
+        "\x01\x00\x00\x00" ++
+        "\x01\x00\x00\x00" ++
+        "\xff\xff\xff\xff" ++
+        "\x01\x00\x00\x00";
+    const valid_unshared_checkpoint = test_files.add(
+        "valid-unshared-checkpoint.bin",
+        unshared_checkpoint_header ++ ("\x00" ** 52),
+    );
     const truncated_checkpoint = test_files.add(
         "truncated-checkpoint.bin",
         minimal_checkpoint_header,
     );
+    const checkpoint_with_trailing_data = test_files.add(
+        "checkpoint-with-trailing-data.bin",
+        minimal_checkpoint_header ++ ("\x00" ** 49),
+    );
 
-    const run_cli_valid = b.addRunArtifact(exe);
-    run_cli_valid.setName("test CLI inspects complete checkpoint");
-    run_cli_valid.addArg("inspect");
-    run_cli_valid.addFileArg(valid_checkpoint);
-    run_cli_valid.expectStdErrEqual(
+    const minimal_checkpoint_output =
         \\Dimension: 1
         \\Hidden dimension: 1
         \\Layers: 1
@@ -188,17 +200,43 @@ pub fn build(b: *std.Build) void {
         \\Vocabulary size: 1
         \\Sequence length: 1
         \\
-    );
+    ;
+
+    const run_cli_valid = b.addRunArtifact(exe);
+    run_cli_valid.setName("test CLI inspects complete checkpoint");
+    run_cli_valid.addArg("inspect");
+    run_cli_valid.addFileArg(valid_checkpoint);
+    run_cli_valid.expectStdOutEqual(minimal_checkpoint_output);
+    run_cli_valid.expectStdErrEqual("");
     run_cli_valid.expectExitCode(0);
+
+    const run_cli_valid_unshared = b.addRunArtifact(exe);
+    run_cli_valid_unshared.setName("test CLI inspects unshared-classifier checkpoint");
+    run_cli_valid_unshared.addArg("inspect");
+    run_cli_valid_unshared.addFileArg(valid_unshared_checkpoint);
+    run_cli_valid_unshared.expectStdOutEqual(minimal_checkpoint_output);
+    run_cli_valid_unshared.expectStdErrEqual("");
+    run_cli_valid_unshared.expectExitCode(0);
 
     const run_cli_invalid_size = b.addRunArtifact(exe);
     run_cli_invalid_size.setName("test CLI rejects truncated checkpoint weights");
     run_cli_invalid_size.addArg("inspect");
     run_cli_invalid_size.addFileArg(truncated_checkpoint);
+    run_cli_invalid_size.expectExitCode(1);
     run_cli_invalid_size.expectStdErrMatch(
         "has an invalid size: expected 76 bytes, found 28\n",
     );
-    run_cli_invalid_size.expectExitCode(1);
+    run_cli_invalid_size.expectStdOutEqual("");
+
+    const run_cli_trailing_data = b.addRunArtifact(exe);
+    run_cli_trailing_data.setName("test CLI rejects checkpoint trailing data");
+    run_cli_trailing_data.addArg("inspect");
+    run_cli_trailing_data.addFileArg(checkpoint_with_trailing_data);
+    run_cli_trailing_data.expectExitCode(1);
+    run_cli_trailing_data.expectStdErrMatch(
+        "has an invalid size: expected 76 bytes, found 77\n",
+    );
+    run_cli_trailing_data.expectStdOutEqual("");
 
     const run_cli_too_few = b.addRunArtifact(exe);
     run_cli_too_few.setName("test CLI missing arguments");
@@ -250,7 +288,9 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_exe_tests.step);
     test_step.dependOn(&run_cli_valid.step);
+    test_step.dependOn(&run_cli_valid_unshared.step);
     test_step.dependOn(&run_cli_invalid_size.step);
+    test_step.dependOn(&run_cli_trailing_data.step);
     test_step.dependOn(&run_cli_too_few.step);
     test_step.dependOn(&run_cli_too_many.step);
     test_step.dependOn(&run_cli_unknown_command.step);
@@ -269,7 +309,9 @@ pub fn build(b: *std.Build) void {
     check_step.dependOn(&run_mod_tests.step);
     check_step.dependOn(&run_exe_tests.step);
     check_step.dependOn(&run_cli_valid.step);
+    check_step.dependOn(&run_cli_valid_unshared.step);
     check_step.dependOn(&run_cli_invalid_size.step);
+    check_step.dependOn(&run_cli_trailing_data.step);
     check_step.dependOn(&run_cli_too_few.step);
     check_step.dependOn(&run_cli_too_many.step);
     check_step.dependOn(&run_cli_unknown_command.step);
