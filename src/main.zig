@@ -1,5 +1,6 @@
 const std = @import("std");
 const Io = std.Io;
+const zllama = @import("zllama");
 
 pub fn main(init: std.process.Init) !void {
     const exit_code = try run(init);
@@ -51,6 +52,14 @@ fn run(init: std.process.Init) !u8 {
         );
         return 1;
     };
+
+    if (file_size < zllama.checkpoint.header_size) {
+        std.debug.print(
+            "Checkpoint '{s}' is too small: expected at least {d} bytes, found {d}\n",
+            .{ checkpoint_path, zllama.checkpoint.header_size, file_size },
+        );
+        return 1;
+    }
 
     std.debug.print(
         "Opened checkpoint: {s} ({d} bytes)\n",

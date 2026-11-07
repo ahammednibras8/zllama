@@ -199,6 +199,14 @@ pub fn build(b: *std.Build) void {
     );
     run_cli_missing_file.expectExitCode(1);
 
+    const run_cli_short_file = b.addRunArtifact(exe);
+    run_cli_short_file.setName("test CLI truncated checkpoint header");
+    run_cli_short_file.addArgs(&.{ "inspect", ".gitattributes" });
+    run_cli_short_file.expectStdErrEqual(
+        "Checkpoint '.gitattributes' is too small: expected at least 28 bytes, found 19\n",
+    );
+    run_cli_short_file.expectExitCode(1);
+
     // A top level step for running all tests. dependOn can be called multiple
     // times and since the two run steps do not depend on one another, this will
     // make the two of them run in parallel.
@@ -211,6 +219,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_cli_unknown_command.step);
     test_step.dependOn(&run_cli_empty_path.step);
     test_step.dependOn(&run_cli_missing_file.step);
+    test_step.dependOn(&run_cli_short_file.step);
 
     const fmt_check = b.addFmt(.{
         .paths = &.{ "build.zig", "src" },
@@ -228,6 +237,7 @@ pub fn build(b: *std.Build) void {
     check_step.dependOn(&run_cli_unknown_command.step);
     check_step.dependOn(&run_cli_empty_path.step);
     check_step.dependOn(&run_cli_missing_file.step);
+    check_step.dependOn(&run_cli_short_file.step);
 
     // Just like flags, top level steps are also listed in the `--help` menu.
     //
