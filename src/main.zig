@@ -34,67 +34,20 @@ fn run(init: std.process.Init) !u8 {
 
     const io = init.io;
 
-    const file = Io.Dir.cwd().openFile(io, checkpoint_path, .{
-        .mode = .read_only,
-    }) catch |err| {
+    var model = zllama.model.MappedModel.open(
+        io,
+        Io.Dir.cwd(),
+        checkpoint_path,
+    ) catch |err| {
         std.debug.print(
-            "Unable to open checkpoint '{s}': {s}\n",
+            "Unable to load checkpoint '{s}': {s}\n",
             .{ checkpoint_path, @errorName(err) },
         );
         return 1;
     };
-    defer file.close(io);
+    defer model.deinit();
 
-    const file_size = file.length(io) catch |err| {
-        std.debug.print(
-            "Unable to read checkpoint size for '{s}': {s}\n",
-            .{ checkpoint_path, @errorName(err) },
-        );
-        return 1;
-    };
-
-    if (file_size < zllama.checkpoint.header_size) {
-        std.debug.print(
-            "Checkpoint '{s}' is too small: expected at least {d} bytes, found {d}\n",
-            .{ checkpoint_path, zllama.checkpoint.header_size, file_size },
-        );
-        return 1;
-    }
-
-    var header_bytes: zllama.checkpoint.Header = undefined;
-
-    var file_reader = file.reader(io, &.{});
-    file_reader.interface.readSliceAll(&header_bytes) catch |err| {
-        std.debug.print(
-            "Unable to read checkpoint header from '{s}': {s}\n",
-            .{ checkpoint_path, @errorName(err) },
-        );
-        return 1;
-    };
-
-    const config = zllama.checkpoint.decodeHeader(&header_bytes) catch |err| {
-        std.debug.print(
-            "Invalid checkpoint configuration in '{s}': {s}\n",
-            .{ checkpoint_path, @errorName(err) },
-        );
-        return 1;
-    };
-
-    const expected_file_size = config.expectedFileSize() catch |err| {
-        std.debug.print(
-            "Unable to calculate checkpoint size for '{s}': {s}\n",
-            .{ checkpoint_path, @errorName(err) },
-        );
-        return 1;
-    };
-
-    if (file_size != expected_file_size) {
-        std.debug.print(
-            "Checkpoint '{s}' has an invalid size: expected {d} bytes, found {d}\n",
-            .{ checkpoint_path, expected_file_size, file_size },
-        );
-        return 1;
-    }
+    const config = model.config;
 
     var stdout_buffer: [1024]u8 = undefined;
     var stdout_file_writer: Io.File.Writer = .init(.stdout(), io, &stdout_buffer);

@@ -168,7 +168,7 @@ pub fn build(b: *std.Build) void {
         "\x01\x00\x00\x00";
     const valid_checkpoint = test_files.add(
         "valid-checkpoint.bin",
-        minimal_checkpoint_header ++ ("\x00" ** 48),
+        minimal_checkpoint_header ++ ("\x00" ** 44),
     );
     const unshared_checkpoint_header =
         "\x01\x00\x00\x00" ++
@@ -180,7 +180,7 @@ pub fn build(b: *std.Build) void {
         "\x01\x00\x00\x00";
     const valid_unshared_checkpoint = test_files.add(
         "valid-unshared-checkpoint.bin",
-        unshared_checkpoint_header ++ ("\x00" ** 52),
+        unshared_checkpoint_header ++ ("\x00" ** 48),
     );
     const truncated_checkpoint = test_files.add(
         "truncated-checkpoint.bin",
@@ -188,7 +188,7 @@ pub fn build(b: *std.Build) void {
     );
     const checkpoint_with_trailing_data = test_files.add(
         "checkpoint-with-trailing-data.bin",
-        minimal_checkpoint_header ++ ("\x00" ** 49),
+        minimal_checkpoint_header ++ ("\x00" ** 45),
     );
 
     const minimal_checkpoint_output =
@@ -224,7 +224,7 @@ pub fn build(b: *std.Build) void {
     run_cli_invalid_size.addFileArg(truncated_checkpoint);
     run_cli_invalid_size.expectExitCode(1);
     run_cli_invalid_size.expectStdErrMatch(
-        "has an invalid size: expected 76 bytes, found 28\n",
+        "': TruncatedCheckpoint\n",
     );
     run_cli_invalid_size.expectStdOutEqual("");
 
@@ -234,7 +234,7 @@ pub fn build(b: *std.Build) void {
     run_cli_trailing_data.addFileArg(checkpoint_with_trailing_data);
     run_cli_trailing_data.expectExitCode(1);
     run_cli_trailing_data.expectStdErrMatch(
-        "has an invalid size: expected 76 bytes, found 77\n",
+        "': TrailingCheckpointData\n",
     );
     run_cli_trailing_data.expectStdOutEqual("");
 
@@ -269,7 +269,7 @@ pub fn build(b: *std.Build) void {
     run_cli_missing_file.setName("test CLI missing checkpoint file");
     run_cli_missing_file.addArgs(&.{ "inspect", "does-not-exist.bin" });
     run_cli_missing_file.expectStdErrEqual(
-        "Unable to open checkpoint 'does-not-exist.bin': FileNotFound\n",
+        "Unable to load checkpoint 'does-not-exist.bin': FileNotFound\n",
     );
     run_cli_missing_file.expectExitCode(1);
 
@@ -277,7 +277,7 @@ pub fn build(b: *std.Build) void {
     run_cli_short_file.setName("test CLI truncated checkpoint header");
     run_cli_short_file.addArgs(&.{ "inspect", ".gitattributes" });
     run_cli_short_file.expectStdErrEqual(
-        "Checkpoint '.gitattributes' is too small: expected at least 28 bytes, found 19\n",
+        "Unable to load checkpoint '.gitattributes': TruncatedHeader\n",
     );
     run_cli_short_file.expectExitCode(1);
 
