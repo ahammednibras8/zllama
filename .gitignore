@@ -10,3 +10,4 @@ zig-out/
 .DS_Store
 
 /stories15M.bin
+/tokenizer.bin
