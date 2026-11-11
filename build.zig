@@ -191,6 +191,19 @@ pub fn build(b: *std.Build) void {
         minimal_checkpoint_header ++ ("\x00" ** 45),
     );
 
+    const tokenizer_fixture = test_files.add(
+        "tokenize/tokenizer.bin",
+        "\x07\x00\x00\x00" ++
+            "\x00\x00\x00\x00\x07\x00\x00\x00unknown" ++
+            "\x00\x00\x00\x00\x03\x00\x00\x00BOS" ++
+            "\x00\x00\x00\x00\x03\x00\x00\x00EOS" ++
+            "\x00\x00\x00\x00\x06\x00\x00\x00unused" ++
+            "\x00\x00\x00\x00\x01\x00\x00\x00 " ++
+            "\x00\x00\x00\x00\x01\x00\x00\x00a" ++
+            "\x00\x00\x00\x00\x01\x00\x00\x00b" ++
+            "\x00\x00\x80\x3f\x02\x00\x00\x00ab",
+    );
+
     const minimal_checkpoint_output =
         \\Dimension: 1
         \\Hidden dimension: 1
@@ -240,13 +253,19 @@ pub fn build(b: *std.Build) void {
 
     const run_cli_too_few = b.addRunArtifact(exe);
     run_cli_too_few.setName("test CLI missing arguments");
-    run_cli_too_few.expectStdErrEqual("Usage: zllama inspect <checkpoint>\n");
+    run_cli_too_few.expectStdErrEqual(
+        "Usage: zllama inspect <checkpoint>\n" ++
+            "       zllama tokenize <prompt>\n",
+    );
     run_cli_too_few.expectExitCode(1);
 
     const run_cli_too_many = b.addRunArtifact(exe);
     run_cli_too_many.setName("test CLI excess arguments");
     run_cli_too_many.addArgs(&.{ "inspect", "stories15M.bin", "extra" });
-    run_cli_too_many.expectStdErrEqual("Usage: zllama inspect <checkpoint>\n");
+    run_cli_too_many.expectStdErrEqual(
+        "Usage: zllama inspect <checkpoint>\n" ++
+            "       zllama tokenize <prompt>\n",
+    );
     run_cli_too_many.expectExitCode(1);
 
     const run_cli_unknown_command = b.addRunArtifact(exe);
@@ -255,6 +274,7 @@ pub fn build(b: *std.Build) void {
     run_cli_unknown_command.expectStdErrEqual(
         \\Unknown command: banana
         \\Usage: zllama inspect <checkpoint>
+        \\       zllama tokenize <prompt>
         \\
     );
     run_cli_unknown_command.expectExitCode(1);
@@ -280,6 +300,14 @@ pub fn build(b: *std.Build) void {
         "Unable to load checkpoint '.gitattributes': TruncatedHeader\n",
     );
     run_cli_short_file.expectExitCode(1);
+
+    const run_cli_tokenize = b.addRunArtifact(exe);
+    run_cli_tokenize.setName("test CLI tokenizes a prompt");
+    run_cli_tokenize.setCwd(tokenizer_fixture.dirname());
+    run_cli_tokenize.addArgs(&.{ "tokenize", "ab" });
+    run_cli_tokenize.expectStdOutEqual("[1, 4, 7]\n");
+    run_cli_tokenize.expectStdErrEqual("");
+    run_cli_tokenize.expectExitCode(0);
 
     // A top level step for running all tests. dependOn can be called multiple
     // times and since the two run steps do not depend on one another, this will
@@ -318,6 +346,7 @@ pub fn build(b: *std.Build) void {
     check_step.dependOn(&run_cli_empty_path.step);
     check_step.dependOn(&run_cli_missing_file.step);
     check_step.dependOn(&run_cli_short_file.step);
+    check_step.dependOn(&run_cli_tokenize.step);
 
     // Just like flags, top level steps are also listed in the `--help` menu.
     //
