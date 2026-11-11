@@ -143,6 +143,10 @@ pub const EncodeOptions = struct {
     add_eos: bool,
 };
 
+pub const DecodeError =
+    std.mem.Allocator.Error ||
+    LookupError;
+
 /// One vocabulary record.
 ///
 /// `piece` does not own its bytes. It points into the owning
@@ -170,6 +174,17 @@ fn compareTokenIndex(
     item: TokenIndex,
 ) std.math.Order {
     return std.mem.order(u8, piece, item.piece);
+}
+
+fn byteFromPiece(piece: []const u8) ?u8 {
+    if (piece.len != 6 or
+        !std.mem.startsWith(u8, piece, "<0x") or
+        piece[5] != '>')
+    {
+        return null;
+    }
+
+    return std.fmt.parseInt(u8, piece[3..5], 16) catch null;
 }
 
 fn buildSortedVocabulary(
@@ -405,6 +420,51 @@ pub const Tokenizer = struct {
         }
 
         return tokens.toOwnedSlice(allocator);
+    }
+
+    pub fn decode(
+        self: *const Tokenizer,
+        allocator: std.mem.Allocator,
+        tokens: []const TokenId,
+    ) DecodeError![]u8 {
+        var output: std.ArrayList(u8) = .empty;
+        errdefer output.deinit(allocator);
+
+        var previous_token: ?TokenId = null;
+
+        for (tokens) |token_id| {
+            const piece = try self.pieceForId(token_id);
+
+            if (token_id == bos_token_id) {
+                previous_token = token_id;
+                continue;
+            }
+
+            if (token_id == eos_token_id) {
+                break;
+            }
+
+            var decoded_piece = piece;
+
+            if (previous_token) |previous| {
+                if (previous == bos_token_id and
+                    decoded_piece.len != 0 and
+                    decoded_piece[0] == ' ')
+                {
+                    decoded_piece = decoded_piece[1..];
+                }
+            }
+
+            if (byteFromPiece(decoded_piece)) |byte| {
+                try output.append(allocator, byte);
+            } else {
+                try output.appendSlice(allocator, decoded_piece);
+            }
+
+            previous_token = token_id;
+        }
+
+        return output.toOwnedSlice(allocator);
     }
 
     pub fn pieceForId(
@@ -759,4 +819,33 @@ test "encode repeatedly merges the highest-scoring adjacent pair" {
         &.{ 1, 4, 5, 9, 2 },
         tokens,
     );
+
+    const decoded = try tokenizer.decode(std.testing.allocator, tokens);
+    defer std.testing.allocator.free(decoded);
+
+    try std.testing.expectEqualStrings("abc", decoded);
+}
+
+test "decode converts byte fallback pieces to raw bytes" {
+    const vocabulary = [_]VocabularyEntry{
+        .{ .piece = "unknown", .score = 0 },
+        .{ .piece = "BOS", .score = 0 },
+        .{ .piece = "EOS", .score = 0 },
+        .{ .piece = "<0x41>", .score = 0 },
+    };
+    const tokenizer = Tokenizer{
+        .allocator = std.testing.allocator,
+        .storage = "",
+        .vocabulary = &vocabulary,
+        .sorted_vocabulary = &.{},
+        .max_token_length = 6,
+    };
+
+    const decoded = try tokenizer.decode(
+        std.testing.allocator,
+        &.{ 1, 3, 2 },
+    );
+    defer std.testing.allocator.free(decoded);
+
+    try std.testing.expectEqualStrings("A", decoded);
 }
