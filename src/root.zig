@@ -6,6 +6,7 @@ pub const checkpoint = @import("checkpoint.zig");
 pub const weights = @import("weights.zig");
 pub const model = @import("model.zig");
 pub const tokenizer = @import("tokenizer.zig");
+pub const tensor = @import("tensor.zig");
 
 /// This is a documentation comment to explain the `printAnotherMessage` function below.
 ///
